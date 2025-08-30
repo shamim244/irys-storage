@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Irys File Upload - Solana</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .container { padding: 20px; border: 1px solid #ddd; border-radius: 10px; }
+        .success { background-color: #e8f5e8; padding: 15px; border-radius: 8px; margin: 10px 0; }
+        .error { background-color: #ffe8e8; padding: 15px; border-radius: 8px; margin: 10px 0; }
+        button { padding: 12px 24px; margin: 5px; border: none; border-radius: 8px; cursor: pointer; }
+        .primary { background-color: #512da8; color: white; }
+        .danger { background-color: #f44336; color: white; }
+        .success-btn { background-color: #4caf50; color: white; }
+        input[type="file"] { padding: 10px; width: 100%; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Irys File Upload with Solana</h1>
+        
+        <!-- Environment Selection -->
+        <div>
+            <h3>Environment:</h3>
+            <label>
+                <input type="radio" name="environment" value="devnet" checked> 
+                🧪 Devnet (FREE - Testing)
+            </label>
+            <label style="margin-left: 20px;">
+                <input type="radio" name="environment" value="mainnet"> 
+                🔴 Mainnet (Real SOL - Production)
+            </label>
+        </div>
+
+        <!-- Wallet Section -->
+        <div id="wallet-section">
+            <button id="connect-btn" class="primary">🔗 Connect Phantom Wallet</button>
+            <div id="wallet-info" style="display: none;">
+                <p>✅ Connected: <span id="wallet-address"></span></p>
+                <button id="disconnect-btn" class="danger">Disconnect</button>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <div id="upload-section" style="display: none;">
+            <h3>Select File to Upload:</h3>
+            <input type="file" id="file-input">
+            <div id="upload-status"></div>
+        </div>
+
+        <!-- Results -->
+        <div id="results"></div>
+    </div>
+
+    <script type="module">
+        import { WebUploader } from 'https://unpkg.com/@irys/web-upload/build/esm/index.js';
+        import { WebSolana } from 'https://unpkg.com/@irys/web-upload-solana/build/esm/index.js';
+
+        let connected = false;
+        let walletAddress = '';
+
+        // Elements
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        const walletInfo = document.getElementById('wallet-info');
+        const uploadSection = document.getElementById('upload-section');
+        const fileInput = document.getElementById('file-input');
+        const uploadStatus = document.getElementById('upload-status');
+        const results = document.getElementById('results');
+        const walletAddressSpan = document.getElementById('wallet-address');
+
+        // Check wallet on load
+        window.addEventListener('load', checkWallet);
+
+        async function checkWallet() {
+            if (window.solana && window.solana.isPhantom) {
+                try {
+                    const response = await window.solana.connect({ onlyIfTrusted: true });
+                    updateWalletUI(true, response.publicKey.toString());
+                } catch (error) {
+                    console.log('Wallet not auto-connected');
+                }
+            } else {
+                alert('⚠️ Phantom wallet not detected! Please install Phantom wallet.');
+            }
+        }
+
+        // Connect wallet
+        connectBtn.addEventListener('click', async () => {
+            if (!window.solana) {
+                alert('Phantom wallet not found! Please install it.');
+                return;
+            }
+
+            try {
+                const response = await window.solana.connect();
+                updateWalletUI(true, response.publicKey.toString());
+            } catch (error) {
+                console.error('Failed to connect:', error);
+                alert('Failed to connect wallet!');
+            }
+        });
+
+        // Disconnect wallet
+        disconnectBtn.addEventListener('click', async () => {
+            await window.solana.disconnect();
+            updateWalletUI(false, '');
+            results.innerHTML = '';
+        });
+
+        // Update wallet UI
+        function updateWalletUI(isConnected, address) {
+            connected = isConnected;
+            walletAddress = address;
+
+            if (isConnected) {
+                connectBtn.style.display = 'none';
+                walletInfo.style.display = 'block';
+                uploadSection.style.display = 'block';
+                walletAddressSpan.textContent = address;
+            } else {
+                connectBtn.style.display = 'block';
+                walletInfo.style.display = 'none';
+                uploadSection.style.display = 'none';
+            }
+        }
+
+        // File upload
+        fileInput.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!connected) {
+                alert('Please connect your wallet first!');
+                return;
+            }
+
+            // Get selected environment
+            const environment = document.querySelector('input[name="environment"]:checked').value;
+
+            uploadStatus.innerHTML = `<p style="color: #ff9800;">📤 Uploading to ${environment}... Please wait!</p>`;
+
+            try {
+                // Initialize Irys
+                let webIrys;
+                if (environment === 'devnet') {
+                    webIrys = await WebUploader(WebSolana).withProvider(window.solana).devnet();
+                } else {
+                    webIrys = await WebUploader(WebSolana).withProvider(window.solana).mainnet();
+                }
+
+                // Upload file
+                const tags = [
+                    { name: "Content-Type", value: file.type },
+                    { name: "File-Name", value: file.name },
+                    { name: "Environment", value: environment },
+                    { name: "Upload-Time", value: new Date().toISOString() }
+                ];
+
+                const receipt = await webIrys.uploadFile(file, { tags });
+                const publicURL = `https://gateway.irys.xyz/${receipt.id}`;
+
+                // Show success
+                uploadStatus.innerHTML = '';
+                results.innerHTML = `
+                    <div class="success">
+                        <h3>🎉 Upload Successful!</h3>
+                        <p><strong>Environment:</strong> ${environment}</p>
+                        <p><strong>Transaction ID:</strong> <code>${receipt.id}</code></p>
+                        <p><strong>File:</strong> ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)</p>
+                        <p><strong>Cost:</strong> ${environment === 'devnet' ? 'FREE' : 'Paid with SOL'}</p>
+                        <p><strong>🌐 Public URL:</strong></p>
+                        <a href="${publicURL}" target="_blank" style="word-break: break-all; color: #1976d2;">${publicURL}</a>
+                        <br><br>
+                        <button class="success-btn" onclick="navigator.clipboard.writeText('${publicURL}')">📋 Copy URL</button>
+                    </div>
+                `;
+
+            } catch (error) {
+                uploadStatus.innerHTML = '';
+                results.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Upload Failed</h3>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <p><strong>Environment:</strong> ${environment}</p>
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
